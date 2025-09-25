@@ -3,8 +3,9 @@
 
 require_once __DIR__ . '/../config/db.php';
 
-echo "<pre>";
-echo "Script de migration démarré...\n";
+// Pour un affichage propre dans le navigateur
+header('Content-Type: text/plain; charset=utf-8');
+echo "--- Script de Migration et d'Initialisation ---\n\n";
 
 try {
     $db = get_db_connection();
@@ -27,7 +28,7 @@ try {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             description TEXT,
-            status TEXT NOT NULL DEFAULT 'active', -- idea|active|paused|done|archived
+            status TEXT NOT NULL DEFAULT 'active',
             github_url TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT
@@ -44,81 +45,100 @@ try {
             column_id INTEGER REFERENCES board_column(id) ON DELETE SET NULL,
             title TEXT NOT NULL,
             description TEXT,
-            priority TEXT DEFAULT 'medium', -- low|medium|high
-            type TEXT DEFAULT 'feature', -- feature|bug|maintenance|other
+            priority TEXT DEFAULT 'medium',
+            type TEXT DEFAULT 'feature',
             due_date TEXT,
             position INTEGER NOT NULL DEFAULT 0,
             done_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT
         );",
-         "CREATE TABLE IF NOT EXISTS idea (
+        "CREATE TABLE IF NOT EXISTS idea (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             notes TEXT,
-            priority INTEGER DEFAULT 2, -- 1..5
+            priority INTEGER DEFAULT 2,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
-        // Indexes pour la performance
+        "CREATE TABLE IF NOT EXISTS checklist_item (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+            label TEXT NOT NULL,
+            checked INTEGER NOT NULL DEFAULT 0 CHECK(checked IN (0, 1)),
+            position INTEGER NOT NULL DEFAULT 0
+        );",
+        "CREATE TABLE IF NOT EXISTS comment (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+            body TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
         "CREATE INDEX IF NOT EXISTS idx_task_project ON task(project_id);",
-        "CREATE INDEX IF NOT EXISTS idx_task_column ON task(column_id, position);",
-        "CREATE INDEX IF NOT EXISTS idx_task_due ON task(due_date);"
+        "CREATE INDEX IF NOT EXISTS idx_task_column_position ON task(column_id, position);",
+        "CREATE INDEX IF NOT EXISTS idx_task_due_date ON task(due_date);",
+        "CREATE INDEX IF NOT EXISTS idx_checklist_item_task ON checklist_item(task_id);",
+        "CREATE INDEX IF NOT EXISTS idx_comment_task ON comment(task_id);"
     ];
 
+    echo "\nCréation/Mise à jour du schéma de la base de données...\n";
     foreach ($schema as $query) {
         $db->exec($query);
-        echo "Exécuté : " . substr($query, 0, 60) . "...\n";
     }
+    echo "Schéma OK.\n";
     
-    // Seed (Jeu d'essai)
-    echo "\nInsertion des données de démo (si nécessaire)...\n";
 
-    // Vérifier si l'utilisateur existe déjà
+    // --- Seed (Jeu d'essai) ---
+    echo "\nInsertion des données de démo (uniquement si la base est vide)...\n";
+
+    // Utilisateur Admin
     $stmt = $db->query("SELECT COUNT(*) FROM user");
     if ($stmt->fetchColumn() == 0) {
-        $password = 'admin'; // Mot de passe par défaut
+        $password = 'admin';
         $hashed_password = password_hash($password, PASSWORD_BCRYPT);
         $db->exec("INSERT INTO user (id, display_name, email, password_hash) VALUES (1, 'Admin', 'admin@example.com', '$hashed_password');");
-        echo "Utilisateur 'Admin' créé avec le mot de passe '$password'. Changez-le rapidement !\n";
+        echo "- Utilisateur 'Admin' créé (mot de passe : $password).\n";
     }
 
     // Projet de démo
     $stmt = $db->query("SELECT COUNT(*) FROM project");
     if ($stmt->fetchColumn() == 0) {
-        $db->exec("INSERT INTO project (id, title, description, status, github_url) VALUES (1, 'Projet de Démo', 'Ceci est un projet pour démontrer les fonctionnalités.', 'active', 'https://github.com/user/repo');");
+        $db->exec("INSERT INTO project (title, description, status, github_url) VALUES ('Projet de Démo', 'Ceci est un projet pour démontrer les fonctionnalités.', 'active', 'https://github.com/user/repo');");
         $project_id = $db->lastInsertId();
-        echo "Projet de démo créé.\n";
+        echo "- Projet de démo créé.\n";
         
-        // Colonnes Kanban par défaut
+        // Création des colonnes et récupération de leurs IDs réels
         $columns = ['Idées', 'À faire', 'En cours', 'Terminé'];
+        $column_ids = [];
+        $stmt = $db->prepare("INSERT INTO board_column (project_id, name, position) VALUES (?, ?, ?)");
+        
         foreach ($columns as $index => $name) {
-            $stmt = $db->prepare("INSERT INTO board_column (project_id, name, position) VALUES (?, ?, ?)");
             $stmt->execute([$project_id, $name, $index]);
+            $column_ids[$name] = $db->lastInsertId();
         }
-        $idea_col_id = 1; $todo_col_id = 2; $doing_col_id = 3; $done_col_id = 4;
-        echo "Colonnes Kanban créées.\n";
+        echo "- Colonnes Kanban créées avec des IDs dynamiques.\n";
 
-        // Tâches de démo
+        // Création des tâches de démo avec les bons IDs de colonnes
         $db->exec("INSERT INTO task (project_id, column_id, title, description, priority, type, due_date) VALUES 
-            ($project_id, $todo_col_id, 'Configurer le projet', 'Mettre en place la base de code et les dépendances.', 'high', 'feature', date('now', '+3 days')),
-            ($project_id, $todo_col_id, 'Créer la page de connexion', 'Avec validation et sécurité.', 'high', 'feature', date('now', '+5 days')),
-            ($project_id, $doing_col_id, 'Développer le tableau de bord', 'Afficher les projets et les idées.', 'medium', 'feature', NULL),
-            ($project_id, $idea_col_id, 'Ajouter une vue calendrier', 'Visualiser les tâches avec échéance.', 'low', 'feature', NULL),
-            ($project_id, $todo_col_id, 'Planifier la MAJ des dépendances', 'Vérifier les MAJ de sécurité pour Q4 2025.', 'medium', 'maintenance', date('now', '+30 days'));");
-        echo "Tâches de démo créées.\n";
+            ($project_id, {$column_ids['À faire']}, 'Configurer le projet', 'Mettre en place la base de code et les dépendances.', 'high', 'feature', date('now', '+3 days')),
+            ($project_id, {$column_ids['À faire']}, 'Créer la page de connexion', 'Avec validation et sécurité.', 'high', 'feature', date('now', '+5 days')),
+            ($project_id, {$column_ids['En cours']}, 'Développer le tableau de bord', 'Afficher les projets et les idées.', 'medium', 'feature', NULL),
+            ($project_id, {$column_ids['Idées']}, 'Ajouter une vue calendrier', 'Visualiser les tâches avec échéance.', 'low', 'feature', NULL),
+            ($project_id, {$column_ids['À faire']}, 'Planifier la MAJ des dépendances', 'Vérifier les MAJ de sécurité pour le prochain trimestre.', 'medium', 'maintenance', date('now', '+30 days'));");
+        echo "- Tâches de démo créées et associées aux bonnes colonnes.\n";
 
         // Idée de démo
         $db->exec("INSERT INTO idea (title, notes, priority) VALUES ('Intégrer une API météo', 'Afficher la météo sur le dashboard pourrait être un gadget sympa.', 3);");
-        echo "Idée de démo créée.\n";
+        echo "- Idée de démo créée.\n";
+    } else {
+        echo "La base de données contient déjà des données, le remplissage de démo est ignoré.\n";
     }
 
     $db->commit();
-    echo "\nMigration terminée avec succès !\n";
+    echo "\n--- ✅ Migration terminée avec succès ! ---\n";
 
 } catch (Exception $e) {
-    if ($db->inTransaction()) {
+    if (isset($db) && $db->inTransaction()) {
         $db->rollBack();
     }
-    die("ERREUR : " . $e->getMessage());
+    die("\n--- ❌ ERREUR LORS DE LA MIGRATION ---\n\n" . $e->getMessage());
 }
-echo "</pre>";

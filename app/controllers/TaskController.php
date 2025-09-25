@@ -20,7 +20,7 @@ class TaskController {
     }
 
     /**
-     * Traite la soumission du formulaire de création de tâche.
+     * Traite la soumission du formulaire de création de tâche de manière sécurisée.
      */
     public function store(int $projectId) {
         if (!CSRF::validateToken($_POST['csrf_token'] ?? '')) {
@@ -30,11 +30,23 @@ class TaskController {
         $title = trim($_POST['title'] ?? '');
         $column_id = (int)($_POST['column_id'] ?? 0);
         $description = trim($_POST['description'] ?? '');
-        
-        if (Validator::isTitle($title) && $column_id > 0) {
-            $taskModel = new Task();
-            $taskModel->create($projectId, $column_id, $title, $description);
+
+        // Validation n°1 : Le titre est valide et un ID de colonne a été fourni.
+        if (!Validator::isTitle($title) || $column_id <= 0) {
+            header('Location: /projects/' . $projectId . '/tasks/new');
+            exit();
         }
+
+        // Validation n°2 : La colonne appartient bien au projet courant.
+        $projectModel = new Project();
+        if (!$projectModel->isColumnInProject($column_id, $projectId)) {
+            http_response_code(403); // Accès interdit
+            die("Erreur : Tentative d'ajout d'une tâche à une colonne invalide.");
+        }
+
+        // Si tout est valide, on crée la tâche.
+        $taskModel = new Task();
+        $taskModel->create($projectId, $column_id, $title, $description);
         
         header('Location: /projects/' . $projectId);
         exit();
@@ -52,15 +64,10 @@ class TaskController {
             die("Tâche non trouvée.");
         }
         
-        // Pour le Markdown (nécessite une librairie comme Parsedown)
-        // Pour l'instant, on se contente d'une conversion simple et sécurisée.
         $task['description_html'] = nl2br(htmlspecialchars($task['description']));
         
         $checklistModel = new ChecklistItem();
         $checklist = $checklistModel->getForTask($id);
-        
-        // Note : la partie "Commentaires" n'est pas encore implémentée dans ce contrôleur.
-        // Il faudrait ajouter ici le chargement depuis un CommentModel.
         
         $data = [
             'task' => $task,
@@ -69,7 +76,7 @@ class TaskController {
         
         $this->view('tasks/show', $data);
     }
-
+    
     /**
      * Marque une tâche comme terminée.
      */
@@ -101,7 +108,7 @@ class TaskController {
 
         if (!CSRF::validateToken($input['csrf_token'] ?? '')) {
             http_response_code(403);
-            echo json_encode(['success' => false, 'message' => 'Jeton CSRF invalide']);
+            echo json_encode(['success' => false, 'message' => 'Jeton CSRF invalide.']);
             return;
         }
 
@@ -123,7 +130,7 @@ class TaskController {
             echo json_encode(['success' => true]);
         } else {
             http_response_code(500);
-            echo json_encode(['success' => false, 'message' => 'Échec de la mise à jour.']);
+            echo json_encode(['success' => false, 'message' => 'Échec de la mise à jour de la position.']);
         }
     }
 
@@ -131,7 +138,7 @@ class TaskController {
 
     public function addChecklistItem(int $taskId) {
         if (!CSRF::validateToken($_POST['csrf_token'] ?? '')) {
-            die('Erreur de sécurité CSRF.');
+            die('Erreur de sécurité : Jeton CSRF invalide.');
         }
 
         $label = trim($_POST['label'] ?? '');
@@ -145,14 +152,13 @@ class TaskController {
 
     public function toggleChecklistItem(int $taskId, int $itemId) {
         if (!CSRF::validateToken($_POST['csrf_token'] ?? '')) {
-            die('Erreur de sécurité CSRF.');
+            die('Erreur de sécurité : Jeton CSRF invalide.');
         }
         
         $model = new ChecklistItem();
         $checked = isset($_POST['checked']);
         $model->toggle($itemId, $checked);
 
-        // On redirige avec un header au lieu d'afficher une vue
         header('Location: /tasks/' . $taskId);
         exit();
     }

@@ -55,4 +55,16 @@ class Project {
             return false;
         }
     }
+
+    /**
+     * Vérifie si une colonne appartient bien à un projet donné.
+     * @return bool
+     */
+    public function isColumnInProject(int $columnId, int $projectId): bool {
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(id) FROM board_column WHERE id = ? AND project_id = ?"
+        );
+        $stmt->execute([$columnId, $projectId]);
+        return (bool) $stmt->fetchColumn();
+    }
 }

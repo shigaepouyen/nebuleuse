@@ -84,51 +84,65 @@ class Task {
     }
 
     /**
-     * Marque une tâche comme terminée, met à jour la date et la déplace si possible.
+     * Marque une tâche comme terminée de manière robuste.
+     * La syntaxe $this->db est corrigée.
+     * L'opération est transactionnelle pour garantir l'intégrité des données.
+     * La position dans l'ancienne colonne est comblée pour éviter les "trous".
      */
     public function markAsCompleted(int $taskId): bool {
-        $this.db->beginTransaction();
+        // L'opération entière est dans une transaction pour s'assurer que tout réussit ou tout échoue.
+        $this->db->beginTransaction();
         try {
-            // Étape 1: Récupérer l'ID du projet pour trouver la bonne colonne "Terminé"
-            $stmt = $this->db->prepare("SELECT project_id FROM task WHERE id = ?");
+            // Étape 1 : Récupérer le contexte complet de la tâche (projet, colonne, position)
+            $stmt = $this->db->prepare("SELECT project_id, column_id, position FROM task WHERE id = ?");
             $stmt->execute([$taskId]);
-            $projectId = $stmt->fetchColumn();
+            $taskContext = $stmt->fetch();
 
-            if (!$projectId) {
-                // La tâche n'existe pas, on annule tout
+            if (!$taskContext) {
                 $this->db->rollBack();
-                return false;
+                return false; // La tâche n'existe pas.
             }
 
-            // Étape 2: Trouver l'ID de la colonne "Terminé" (ou "Done") pour ce projet
-            $colStmt = $this->db->prepare(
-                "SELECT id FROM board_column WHERE project_id = ? AND (name = 'Terminé' OR name = 'Done')"
+            // Étape 2 : Combler le "trou" laissé par la tâche dans sa colonne d'origine.
+            // On décrémente la position de toutes les tâches qui se trouvaient après elle.
+            $stmt = $this->db->prepare(
+                "UPDATE task SET position = position - 1 WHERE column_id = ? AND position > ?"
             );
-            $colStmt->execute([$projectId]);
+            $stmt->execute([$taskContext['column_id'], $taskContext['position']]);
+
+            // Étape 3 : Trouver la colonne "Terminé" (ou "Done") du projet.
+            $colStmt = $this->db->prepare(
+                "SELECT id FROM board_column WHERE project_id = ? AND (name = 'Terminé' OR name = 'Done') LIMIT 1"
+            );
+            $colStmt->execute([$taskContext['project_id']]);
             $doneColumnId = $colStmt->fetchColumn();
 
-            // Étape 3: Mettre à jour la tâche
-            $updateStmt = null;
+            $finalColumnId = $taskContext['column_id']; // Par défaut, la tâche reste dans sa colonne si "Terminé" n'existe pas.
+            $newPosition = -1; // Position invalide si elle n'est pas déplacée.
+
             if ($doneColumnId) {
-                // Si on a trouvé la colonne, on déplace la tâche
-                $updateStmt = $this->db->prepare(
-                    "UPDATE task SET done_at = datetime('now'), updated_at = datetime('now'), column_id = ? WHERE id = ?"
-                );
-                $updateStmt->execute([$doneColumnId, $taskId]);
-            } else {
-                // Sinon, on met juste à jour la date de complétion
-                $updateStmt = $this->db->prepare(
-                    "UPDATE task SET done_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
-                );
-                $updateStmt->execute([$taskId]);
+                $finalColumnId = $doneColumnId;
+                // Étape 4 : Calculer la nouvelle position (à la fin de la colonne "Terminé").
+                $posStmt = $this->db->prepare("SELECT MAX(position) FROM task WHERE column_id = ?");
+                $posStmt->execute([$doneColumnId]);
+                $maxPos = $posStmt->fetchColumn();
+                $newPosition = ($maxPos === null) ? 0 : $maxPos + 1;
             }
-            
+
+            // Étape 5 : Mettre à jour la tâche pour la marquer comme terminée et la déplacer.
+            $updateStmt = $this->db->prepare(
+                "UPDATE task SET done_at = datetime('now'), updated_at = datetime('now'), column_id = ?, position = ? WHERE id = ?"
+            );
+            $updateStmt->execute([$finalColumnId, $newPosition, $taskId]);
+
+            // Si toutes les opérations ont réussi, on valide la transaction.
             $this->db->commit();
             return true;
 
         } catch (Exception $e) {
+            // En cas d'erreur à n'importe quelle étape, on annule tout.
             $this->db->rollBack();
-            error_log($e->getMessage()); // Important pour le débogage
+            error_log("Erreur lors de la complétion de la tâche : " . $e->getMessage());
             return false;
         }
     }
