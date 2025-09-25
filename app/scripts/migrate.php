@@ -73,6 +73,24 @@ try {
             body TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
+        // --- TABLES POUR LA GESTION DES TAGS ---
+        "CREATE TABLE IF NOT EXISTS tag (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            color TEXT DEFAULT '#64748b' -- slate-500
+        );",
+
+        "CREATE TABLE IF NOT EXISTS project_tag (
+            project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+            tag_id INTEGER NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
+            PRIMARY KEY (project_id, tag_id)
+        );",
+
+        "CREATE TABLE IF NOT EXISTS task_tag (
+            task_id INTEGER NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+            tag_id INTEGER NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
+            PRIMARY KEY (task_id, tag_id)
+        );",
         "CREATE INDEX IF NOT EXISTS idx_task_project ON task(project_id);",
         "CREATE INDEX IF NOT EXISTS idx_task_column_position ON task(column_id, position);",
         "CREATE INDEX IF NOT EXISTS idx_task_due_date ON task(due_date);",

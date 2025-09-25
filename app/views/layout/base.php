@@ -18,6 +18,18 @@
 
         <main class="py-10">
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                
+                <?php if ($message = Flash::get('success')): ?>
+                    <div class="mb-4 rounded-md bg-green-50 p-4 border border-green-200" role="alert">
+                        <p class="text-sm font-medium text-green-800"><?= $message ?></p>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($message = Flash::get('error')): ?>
+                    <div class="mb-4 rounded-md bg-red-50 p-4 border border-red-200" role="alert">
+                        <p class="text-sm font-medium text-red-800"><?= $message ?></p>
+                    </div>
+                <?php endif; ?>
                 <?php require $content; ?>
             </div>
         </main>

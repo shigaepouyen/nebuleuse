@@ -1,4 +1,4 @@
-# 🚀 Project Tracker
+# 🚀 Nebuleuse
 
 Une webapp minimaliste et auto-hébergée pour le suivi de projets personnels, de l'idéation à la maintenance. Léger, rapide et conçu pour les hébergements mutualisés (PHP + SQLite).
 

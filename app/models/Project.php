@@ -67,4 +67,29 @@ class Project {
         $stmt->execute([$columnId, $projectId]);
         return (bool) $stmt->fetchColumn();
     }
+
+    /**
+     * Synchronise les tags pour un projet donné.
+     * Supprime les anciens tags et ajoute les nouveaux.
+     */
+    public function syncTags(int $projectId, array $tagIds): void {
+        $this->db->beginTransaction();
+        try {
+            // 1. Supprimer les anciennes associations
+            $stmt_delete = $this->db->prepare("DELETE FROM project_tag WHERE project_id = ?");
+            $stmt_delete->execute([$projectId]);
+
+            // 2. Ajouter les nouvelles associations
+            if (!empty($tagIds)) {
+                $stmt_insert = $this->db->prepare("INSERT INTO project_tag (project_id, tag_id) VALUES (?, ?)");
+                foreach ($tagIds as $tagId) {
+                    $stmt_insert->execute([$projectId, $tagId]);
+                }
+            }
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            error_log($e->getMessage());
+        }
+    }
 }
