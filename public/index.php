@@ -60,6 +60,8 @@ $router->add('POST', '/ideas', [IdeaController::class, 'store'], true);
 $router->add('POST', '/ideas/(\d+)/delete', [IdeaController::class, 'delete'], true);
 $router->add('GET', '/ideas/(\d+)/convert', [IdeaController::class, 'showConvertToTaskForm'], true);
 $router->add('POST', '/ideas/(\d+)/convert', [IdeaController::class, 'handleConvertToTask'], true);
+$router->add('POST', '/ideas/quick-add', [IdeaController::class, 'quickAdd'], true); // <-- NOUVELLE LIGNE
+$router->add('POST', '/ideas/(\d+)/promote', [IdeaController::class, 'promoteToProject'], true); // <-- NOUVELLE LIGNE
 
 // Maintenance
 $router->add('GET', '/maintenance', [MaintenanceController::class, 'index'], true);

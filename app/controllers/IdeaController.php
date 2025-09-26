@@ -92,4 +92,62 @@ class IdeaController {
         header('Location: /ideas/' . $id . '/convert');
         exit();
     }
+
+    /**
+     * Gère la création d'une idée depuis le champ de saisie rapide.
+     */
+    public function quickAdd() {
+        if (!CSRF::validateToken($_POST['csrf_token'] ?? '')) {
+            die('Erreur de sécurité.');
+        }
+
+        $title = trim($_POST['quick_idea_title'] ?? '');
+
+        if (!empty($title)) {
+            $ideaModel = new Idea();
+            $ideaModel->create($title, ''); // Crée l'idée avec un titre, sans notes
+            Flash::set('success', 'Idée "' . htmlspecialchars($title) . '" capturée dans la Pensine !');
+        } else {
+            Flash::set('error', 'Le champ de l\'idée ne peut pas être vide.');
+        }
+        
+        // Redirige l'utilisateur vers la page où il se trouvait
+        header('Location: ' . ($_SERVER['HTTP_REFERER'] ?? '/'));
+        exit();
+    }
+
+    /**
+     * Transforme une idée en un tout nouveau projet.
+     */
+    public function promoteToProject(int $id) {
+        if (!CSRF::validateToken($_POST['csrf_token'] ?? '')) {
+            die('Erreur de sécurité.');
+        }
+        
+        $ideaModel = new Idea();
+        $idea = $ideaModel->findById($id);
+
+        if (!$idea) {
+            Flash::set('error', 'L\'idée que vous essayez de promouvoir n\'existe pas.');
+            header('Location: /ideas');
+            exit();
+        }
+        
+        // Création du projet à partir de l'idée
+        $projectModel = new Project();
+        $projectId = $projectModel->create($idea['title'], $idea['notes'], ''); // Le lien GitHub est vide par défaut
+
+        if ($projectId) {
+            // L'idée a rempli sa mission, on la supprime
+            $ideaModel->delete($id);
+            Flash::set('success', 'L\'idée a été promue en un nouveau projet !');
+            // On redirige directement vers le nouveau projet
+            header('Location: /projects/' . $projectId);
+            exit();
+        } else {
+            Flash::set('error', 'Une erreur est survenue lors de la création du projet.');
+            header('Location: /ideas');
+            exit();
+        }
+    }
 }
